@@ -1,0 +1,7 @@
+target/
+.vscode/
+*.db
+*.db-journal
+.classpath
+.project
+.settings/
