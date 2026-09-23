@@ -23,6 +23,9 @@ public class MainFrame extends JFrame {
     private final AuthService authService;
     private final User currentUser;
 
+    private JPanel rightWorkspacePanel;
+    private CardLayout cardLayout;
+
     public MainFrame(CategoryRepository categoryRepository,
                      ProductRepository productRepository,
                      OrderRepository orderRepository,
@@ -40,35 +43,42 @@ public class MainFrame extends JFrame {
 
         setTitle("Junaie's Flower Shop - Sales & Inventory System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(550, 600);
+        setSize(1100, 700);
         setLocationRelativeTo(null);
 
         initUI();
     }
 
     private void initUI() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new GridLayout(10, 1, 8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+        setLayout(new BorderLayout());
 
-        JLabel titleLabel = new JLabel("Sales and Inventory Main Menu", SwingConstants.CENTER);
+        // --- LEFT NAVIGATION PANEL ---
+        JPanel navPanel = new JPanel();
+        navPanel.setLayout(new GridLayout(10, 1, 5, 5));
+        navPanel.setPreferredSize(new Dimension(240, 700));
+        navPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 0, 1, Color.LIGHT_GRAY),
+                BorderFactory.createEmptyBorder(15, 10, 15, 10)
+        ));
+
+        JLabel titleLabel = new JLabel("Junaie's POS", SwingConstants.CENTER);
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
 
-        JLabel userLabel = new JLabel("Logged in as: " + currentUser.getFullName() + " (" + currentUser.getRole() + ")", SwingConstants.CENTER);
-        userLabel.setFont(new Font("Arial", Font.ITALIC, 12));
-        userLabel.setForeground(Color.BLUE);
+        JLabel userLabel = new JLabel("<html><center>" + currentUser.getFullName() + "<br><font color='gray'>(" + currentUser.getRole() + ")</font></center></html>", SwingConstants.CENTER);
+        userLabel.setFont(new Font("Arial", Font.PLAIN, 12));
 
-        panel.add(titleLabel);
-        panel.add(userLabel);
+        navPanel.add(titleLabel);
+        navPanel.add(userLabel);
 
-        JButton btnProcessSales = new JButton("1. Process Sales");
-        JButton btnInventory = new JButton("2. Inventory Management");
-        JButton btnSuppliers = new JButton("3. Manage Suppliers");
-        JButton btnReports = new JButton("4. Generate Report");
-        JButton btnDisputes = new JButton("5. Handle Disputes and Returns");
-        JButton btnManageUsers = new JButton("6. Manage User Accounts");
-        JButton btnAddCategory = new JButton("7. Add New Category");
-        JButton btnExit = new JButton("8. Logout & Exit");
+        // Buttons (Without Numbering)
+        JButton btnProcessSales = new JButton("Process Sales");
+        JButton btnInventory = new JButton("Inventory Management");
+        JButton btnSuppliers = new JButton("Manage Suppliers");
+        JButton btnReports = new JButton("Executive Reports (KPI)");
+        JButton btnDisputes = new JButton("Handle Disputes");
+        JButton btnManageUsers = new JButton("User Accounts");
+        JButton btnAddCategory = new JButton("Add Category");
+        JButton btnExit = new JButton("Logout & Exit");
 
         String role = currentUser.getRole().toUpperCase();
         boolean isOwner = role.equals("OWNER") || role.equals("ADMIN");
@@ -77,33 +87,38 @@ public class MainFrame extends JFrame {
         btnManageUsers.setEnabled(isOwner);
         btnReports.setEnabled(isOwner);
         btnDisputes.setEnabled(isOwner);
-
         btnSuppliers.setEnabled(isOwner || isManager);
 
-        if (!isOwner) {
-            btnManageUsers.setToolTipText("Restricted to Owner");
-            btnReports.setToolTipText("Restricted to Owner");
-            btnDisputes.setToolTipText("Restricted to Owner");
+        navPanel.add(btnProcessSales);
+        navPanel.add(btnInventory);
+        navPanel.add(btnSuppliers);
+        navPanel.add(btnReports);
+        navPanel.add(btnDisputes);
+        navPanel.add(btnManageUsers);
+        navPanel.add(btnAddCategory);
+        navPanel.add(btnExit);
+
+        add(navPanel, BorderLayout.WEST);
+
+        // --- RIGHT WORKSPACE PANEL (CardLayout) ---
+        cardLayout = new CardLayout();
+        rightWorkspacePanel = new JPanel(cardLayout);
+
+        // Load Views into Workspace Cards
+        ReportPanel reportPanel = new ReportPanel(orderRepository, currentUser);
+        rightWorkspacePanel.add(reportPanel, "REPORTS");
+
+        // Set default display based on role
+        if (isOwner) {
+            cardLayout.show(rightWorkspacePanel, "REPORTS"); // Default to KPI for Owner
+        } else {
+            openSalesWindow(); // Launch POS Sales module for Staff / Manager
         }
-        if (!isOwner && !isManager) {
-            btnSuppliers.setToolTipText("Restricted to Manager/Owner");
-        }
 
-        panel.add(btnProcessSales);
-        panel.add(btnInventory);
-        panel.add(btnSuppliers);
-        panel.add(btnReports);
-        panel.add(btnDisputes);
-        panel.add(btnManageUsers);
-        panel.add(btnAddCategory);
-        panel.add(btnExit);
+        add(rightWorkspacePanel, BorderLayout.CENTER);
 
-        add(panel);
-
-        btnProcessSales.addActionListener(e -> {
-            SalesFrame salesFrame = new SalesFrame(productRepository, orderRepository, orderItemRepository, currentUser);
-            salesFrame.setVisible(true);
-        });
+        // --- BUTTON ACTION LISTENERS ---
+        btnProcessSales.addActionListener(e -> openSalesWindow());
 
         btnInventory.addActionListener(e -> {
             InventoryFrame inventoryFrame = new InventoryFrame(productRepository, categoryRepository, currentUser);
@@ -115,10 +130,7 @@ public class MainFrame extends JFrame {
             supplierFrame.setVisible(true);
         });
 
-        btnReports.addActionListener(e -> {
-            ReportFrame reportFrame = new ReportFrame(orderRepository, currentUser);
-            reportFrame.setVisible(true);
-        });
+        btnReports.addActionListener(e -> cardLayout.show(rightWorkspacePanel, "REPORTS"));
 
         btnDisputes.addActionListener(e -> {
             DisputesFrame disputesFrame = new DisputesFrame(orderRepository, currentUser);
@@ -128,6 +140,11 @@ public class MainFrame extends JFrame {
         btnManageUsers.addActionListener(e -> manageUsersUI());
         btnAddCategory.addActionListener(e -> addCategoryUI());
         btnExit.addActionListener(e -> System.exit(0));
+    }
+
+    private void openSalesWindow() {
+        SalesFrame salesFrame = new SalesFrame(productRepository, orderRepository, orderItemRepository, currentUser);
+        salesFrame.setVisible(true);
     }
 
     private void manageUsersUI() {
