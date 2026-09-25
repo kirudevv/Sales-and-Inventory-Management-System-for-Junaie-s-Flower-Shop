@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Launch Flower Shop",
+            "request": "launch",
+            "mainClass": "com.gplsadgroup.App",
+            "projectName": "junaieflowershop-sad",
+            "cwd": "${workspaceFolder}/junaieflowershop-sad"
+        }
+    ]
+}

@@ -29,7 +29,7 @@ public class InventoryFrame extends JFrame {
         this.currentUser = currentUser;
 
         setTitle("Junaie's Flower Shop - Inventory Management");
-        setSize(850, 500);
+        setSize(950, 500);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -60,16 +60,21 @@ public class InventoryFrame extends JFrame {
             }
         };
         inventoryTable = new JTable(tableModel);
+        inventoryTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        // Highlight low stock rows in red
+        // Highlight the entire row in bold red when stock hits reorder level (<= 5 or Out of Stock)
         inventoryTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                String stockStr = table.getValueAt(row, 4).toString();
+                
+                Object stockVal = table.getValueAt(row, 4);
+                String stockStr = (stockVal != null) ? stockVal.toString() : "";
 
-                if (stockStr.contains("LOW STOCK") || stockStr.contains("OUT OF STOCK")) {
-                    c.setForeground(Color.RED);
+                boolean isReorderLevel = stockStr.contains("LOW STOCK") || stockStr.contains("OUT OF STOCK");
+
+                if (isReorderLevel) {
+                    c.setForeground(new Color(205, 32, 38)); // Deep warning red
                     c.setFont(c.getFont().deriveFont(Font.BOLD));
                 } else {
                     c.setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
@@ -87,6 +92,7 @@ public class InventoryFrame extends JFrame {
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 10));
 
         JButton btnAddProduct = new JButton("Add New Product");
+        JButton btnEditProduct = new JButton("Edit Selected Product");
         JButton btnRestock = new JButton("Restock Product");
         JButton btnRefresh = new JButton("Refresh Stock");
         JButton btnUpdateStatus = new JButton("Toggle Product Status");
@@ -94,17 +100,22 @@ public class InventoryFrame extends JFrame {
         String role = currentUser.getRole().toUpperCase();
         boolean canManage = role.equals("OWNER") || role.equals("ADMIN") || role.equals("MANAGER");
 
-        btnUpdateStatus.setEnabled(canManage);
+        // Management-only operations
         btnAddProduct.setEnabled(canManage);
-        btnRestock.setEnabled(canManage);
+        btnEditProduct.setEnabled(canManage);
+        btnUpdateStatus.setEnabled(canManage);
+
+        // All users (including STAFF) can restock items
+        btnRestock.setEnabled(true);
 
         if (!canManage) {
-            btnUpdateStatus.setToolTipText("Restricted to Manager and Owner");
             btnAddProduct.setToolTipText("Restricted to Manager and Owner");
-            btnRestock.setToolTipText("Restricted to Manager and Owner");
+            btnEditProduct.setToolTipText("Restricted to Manager and Owner");
+            btnUpdateStatus.setToolTipText("Restricted to Manager and Owner");
         }
 
         bottomPanel.add(btnAddProduct);
+        bottomPanel.add(btnEditProduct);
         bottomPanel.add(btnRestock);
         bottomPanel.add(btnRefresh);
         bottomPanel.add(btnUpdateStatus);
@@ -114,6 +125,7 @@ public class InventoryFrame extends JFrame {
         btnRefresh.addActionListener(e -> loadInventoryData());
         btnUpdateStatus.addActionListener(e -> toggleProductStatus());
         btnAddProduct.addActionListener(e -> addProductUI());
+        btnEditProduct.addActionListener(e -> editProductUI());
         btnRestock.addActionListener(e -> restockProductUI());
     }
 
@@ -129,7 +141,7 @@ public class InventoryFrame extends JFrame {
                 String stockDisplay;
                 if (stock <= 0) {
                     stockDisplay = stock + " ❌ (OUT OF STOCK)";
-                } else if (p.isLowStock(5)) {
+                } else if (p.isLowStock(5)) { // Reorder threshold is 5
                     stockDisplay = stock + " ⚠️ (LOW STOCK)";
                 } else {
                     stockDisplay = String.valueOf(stock);
@@ -213,6 +225,86 @@ public class InventoryFrame extends JFrame {
                 JOptionPane.showMessageDialog(this, "Invalid price or stock quantity format.", "Input Error", JOptionPane.ERROR_MESSAGE);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Error saving product: " + ex.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void editProductUI() {
+        int selectedRow = inventoryTable.getSelectedRow();
+        if (selectedRow < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a product from the table to modify.", "Selection Required", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        Product selectedProduct = productList.get(selectedRow);
+
+        List<Category> categories = categoryRepository.findAll();
+        if (categories.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No categories available.", "Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JTextField codeField = new JTextField(selectedProduct.getProductCode());
+        JTextField nameField = new JTextField(selectedProduct.getProductName());
+        JTextField priceField = new JTextField(selectedProduct.getSellingPrice() != null ? selectedProduct.getSellingPrice().toString() : "");
+        
+        JComboBox<Category> categoryCombo = new JComboBox<>(categories.toArray(new Category[0]));
+        categoryCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Category) {
+                    setText(((Category) value).getName());
+                }
+                return this;
+            }
+        });
+
+        // Set matching current category in combo box
+        if (selectedProduct.getCategory() != null) {
+            for (Category c : categories) {
+                if (c.getCategoryId().equals(selectedProduct.getCategory().getCategoryId())) {
+                    categoryCombo.setSelectedItem(c);
+                    break;
+                }
+            }
+        }
+
+        Object[] fields = {
+            "Product Code:", codeField,
+            "Product Name:", nameField,
+            "Selling Price (₱):", priceField,
+            "Category:", categoryCombo
+        };
+
+        int option = JOptionPane.showConfirmDialog(this, fields, "Modify Product Details (ID: " + selectedProduct.getProductId() + ")", JOptionPane.OK_CANCEL_OPTION);
+        if (option == JOptionPane.OK_OPTION) {
+            String code = codeField.getText().trim();
+            String name = nameField.getText().trim();
+            String priceStr = priceField.getText().trim();
+            Category chosenCategory = (Category) categoryCombo.getSelectedItem();
+
+            if (code.isEmpty() || name.isEmpty() || priceStr.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Code, Name, and Selling Price are required.", "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                BigDecimal updatedPrice = new BigDecimal(priceStr);
+
+                selectedProduct.setProductCode(code);
+                selectedProduct.setProductName(name);
+                selectedProduct.setSellingPrice(updatedPrice);
+                selectedProduct.setCategory(chosenCategory);
+
+                productRepository.save(selectedProduct);
+                JOptionPane.showMessageDialog(this, "Product details updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                loadInventoryData();
+
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Invalid selling price format.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error updating product: " + ex.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
